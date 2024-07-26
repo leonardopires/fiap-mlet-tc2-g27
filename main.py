@@ -11,15 +11,16 @@ from pandas import Index
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import Select
 import os
 from datetime import datetime
 
 # Configurações AWS
 aws_access_key_id = os.environ['AWS_ACCESS_KEY_ID']
 aws_secret_access_key = os.environ['AWS_SECRET_ACCESS_KEY']
-region = 'us-east-2'
-bucket_name = 'fiap2024techchallenge02grp27'
-
+aws_session_token = os.environ['AWS_SESSION_TOKEN']
+region = os.environ['AWS_REGION']
+bucket_name = os.environ['S3_BUCKET_NAME']
 
 # Função para baixar o arquivo
 def download_file(url, local_filename):
@@ -40,6 +41,7 @@ def upload_to_s3(local_file, bucket_name, s3_file):
     s3 = boto3.client('s3',
                       aws_access_key_id=aws_access_key_id,
                       aws_secret_access_key=aws_secret_access_key,
+                      aws_session_token=aws_session_token,
                       region_name=region)
     s3.upload_file(local_file, bucket_name, s3_file)
 
@@ -79,7 +81,7 @@ def busca_carteira_teorica(indice, tempo_espera_maximo=60):
 
     url = f'https://sistemaswebb3-listados.b3.com.br/indexPage/day/{indice.upper()}?language=pt-br'
     chrome_options = Options()
-    chrome_options.add_argument("--headless=new")
+    # chrome_options.add_argument("--headless=new")
     prefs = {"download.default_directory": download_dir}
     chrome_options.add_experimental_option("prefs", prefs)
     print("Iniciando Chrome")
@@ -91,6 +93,11 @@ def busca_carteira_teorica(indice, tempo_espera_maximo=60):
 
     # Localiza e clica no botão de download
     try:
+        segment_combo = wd.find_element(By.ID, 'segment')
+        segment_combo = Select(segment_combo)
+        wd.implicitly_wait(10)
+        segment_combo.select_by_value('2')
+
         download_button = wd.find_element(By.LINK_TEXT, "Download")
         download_button.click()
         print("Botão de download clicado, aguardando conclusão do download...")
@@ -138,11 +145,15 @@ def main():
 
 
         # Nome do arquivo no S3 com data incluída no nome
-        s3_file = f'parquet/carteira_teorica_{indice}_{data_atual}.parquet'
+        s3_file = f'input/carteira_teorica_{indice}_latest.parquet'
+        s3_part_file = f'parquet/carteira_teorica_{indice}_{data_atual}.parquet'
 
         # Faz upload para o S3
         upload_to_s3(local_parquet, bucket_name, s3_file)
         print(f"Arquivo {local_parquet} enviado para o S3 como {s3_file}")
+
+        upload_to_s3(local_parquet, bucket_name, s3_part_file)
+        print(f"Arquivo {local_parquet} enviado para o S3 como {s3_part_file}")
 
     else:
         print('Nenhuma data encontrada no nome do arquivo.')
